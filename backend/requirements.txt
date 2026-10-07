@@ -1,0 +1,23 @@
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+python-dotenv==1.1.1
+sqlalchemy==2.1.2
+python-multipart==0.0.20
+pymupdf==1.28.2
+
+# Optional — OCR fallback for scanned/image documents. The app degrades
+# gracefully (clear warning, not a crash or silent empty text) if these
+# aren't installed; see app/services/document_extractor.py.
+pytesseract==0.3.13
+pillow==11.3.0
+# Also requires the tesseract-ocr SYSTEM binary (not a pip package):
+#   Windows: https://github.com/UB-Mannheim/tesseract/wiki
+#   Debian/Ubuntu: apt-get install tesseract-ocr
+
+# NOTE: this file does NOT duplicate the RAG-layer dependencies (langchain,
+# chromadb, sentence-transformers, torch, groq, rank_bm25, etc.) — those stay
+# in the project root's requirements.txt from Phase 3/4, since the backend
+# imports those modules in-process rather than vendoring their dependencies
+# separately. Install BOTH requirements.txt files into the same environment:
+#   pip install -r requirements.txt            (project root, Phase 3/4 deps)
+#   pip install -r backend/requirements.txt     (this file, Phase 5 deps)
