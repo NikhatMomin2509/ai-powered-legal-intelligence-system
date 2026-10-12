@@ -11,7 +11,7 @@ doesn't match — exactly what "preserve the complete analyzer output" rules
 out. IssueAnalysisResponse exists only so Swagger has something to show.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -20,6 +20,9 @@ MIN_QUERY_LENGTH = 10
 
 class IssueAnalysisRequest(BaseModel):
     query: str
+    # Optional: continue an existing case session (follow-up question).
+    # Requires authentication AND ownership of that case — enforced server-side.
+    case_id: Optional[int] = None
 
     @field_validator("query")
     @classmethod

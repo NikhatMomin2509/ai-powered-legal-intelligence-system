@@ -1,9 +1,9 @@
 """
 main.py — FastAPI application entrypoint.
 
-Phase 5A + 5B + 5C scope: app creation, CORS, root endpoint, health router,
-legal issue analysis router, and SQLite table creation on startup. Document
-upload (5D) is deliberately not wired in yet.
+App creation, CORS (with credentials, for the anonymous-session cookie), root
+endpoint, health router, auth router, legal issue router, document router, and
+SQLite table creation/migration on startup.
 """
 
 import logging
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import API_TITLE, API_DESCRIPTION, API_VERSION, CORS_ALLOWED_ORIGINS
-from app.routers import health, issues, documents
+from app.routers import health, issues, documents, auth, cases
 
 # Without this, Python's default logging config suppresses INFO-level logs
 # (root logger defaults to WARNING), which would hide init_db()'s path/table
@@ -28,6 +28,16 @@ async def lifespan(app: FastAPI):
     # that already exist) — safe to run on every restart.
     from app.database import init_db
     init_db()
+    # Startup sweep of raw uploads that outlived their retention window.
+    from app.database import SessionLocal
+    from app.services import document_service
+    db = SessionLocal()
+    try:
+        document_service.purge_stale_uploads(db)
+    except Exception:
+        logging.getLogger("legal_ai.main").exception("Startup purge of stale uploads failed")
+    finally:
+        db.close()
     yield
 
 
@@ -47,8 +57,10 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(issues.router)
 app.include_router(documents.router)
+app.include_router(cases.router)
 
 
 @app.get("/")

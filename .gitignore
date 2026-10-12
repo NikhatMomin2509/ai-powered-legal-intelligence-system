@@ -68,3 +68,5 @@ Thumbs.db
 *.log
 npm-debug.log*
 chroma_cases_backup_pre_cleanup/
+auth_test_results.txt
+screenshots/

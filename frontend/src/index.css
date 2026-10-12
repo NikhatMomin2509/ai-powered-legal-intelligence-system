@@ -7,24 +7,53 @@ html {
 }
 
 body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+  background-color: #080c14;
+  color: #f1f5f9;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "cv11", "ss01";
 }
 
-/* Fixed radial mesh for depth — subtle, not decorative noise on every element */
+/* Subtle architectural mesh for depth — restrained and scholarly */
 .bg-mesh {
   background-image:
-    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(16, 185, 129, 0.12), transparent),
-    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(99, 102, 241, 0.1), transparent);
+    radial-gradient(ellipse 70% 40% at 20% -5%, rgba(217, 119, 6, 0.05), transparent),
+    radial-gradient(ellipse 60% 35% at 85% 15%, rgba(99, 102, 241, 0.05), transparent);
   background-attachment: fixed;
 }
 
+/* Near-opaque card surface — prevents text bleedthrough while maintaining subtle depth */
 .glass {
-  @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08];
+  background-color: rgba(13, 19, 31, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .glass-hover {
-  @apply transition-all duration-300 hover:bg-white/[0.06] hover:border-white/[0.14];
+  transition: all 0.2s ease;
+}
+.glass-hover:hover {
+  background-color: rgba(19, 26, 42, 0.95);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Legal brief citation and margin-note accents */
+.citation-border-statute {
+  border-left: 3px solid #d97706;
+}
+
+.citation-border-precedent {
+  border-left: 3px solid #6366f1;
+}
+
+.citation-border-support {
+  border-left: 3px solid #10b981;
+}
+
+.citation-border-oppose {
+  border-left: 3px solid #f43f5e;
 }
 
 ::-webkit-scrollbar {
@@ -56,4 +85,53 @@ body {
   outline: 2px solid rgba(16, 185, 129, 0.6);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* Client-side Print / Save as PDF Stylesheet */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+  aside,
+  header,
+  nav,
+  .no-print,
+  button,
+  .pinned-composer,
+  [role="dialog"] {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+  .glass,
+  .bg-ink-900,
+  .bg-ink-950,
+  .bg-ink-900\/90,
+  .bg-ink-900\/80,
+  .bg-ink-900\/85 {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  .text-ink-50,
+  .text-ink-100,
+  .text-ink-200,
+  .text-ink-300 {
+    color: #1e293b !important;
+  }
+  .text-ink-400,
+  .text-ink-500,
+  .text-ink-600 {
+    color: #475569 !important;
+  }
+  .border-ink-800,
+  .border-ink-850 {
+    border-color: #e2e8f0 !important;
+  }
 }

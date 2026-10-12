@@ -8,13 +8,15 @@ than writing a second, separately-maintained JSON parser for LLM output.
 """
 
 import logging
+import os
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app import config  # noqa: F401  (sys.path bootstrap — see config.py docstring)
-from app.config import UPLOAD_DIR
+from app.config import UPLOAD_DIR, UPLOAD_TTL_MINUTES
 from app.models.document import DocumentAnalysis
 from app.services.document_extractor import extract_text
 from app.services.clause_detection import segment_clauses, Clause
@@ -46,6 +48,41 @@ DOCUMENT_ANALYSIS_DISCLAIMER = (
 )
 
 
+class DocumentUnavailableError(Exception):
+    """The record exists and belongs to the caller, but its original file is
+    gone (already processed-and-deleted, or purged as stale). Distinct from
+    "not found": the user should simply upload the document again."""
+
+
+def purge_stale_uploads(db: Session, ttl_minutes: int = UPLOAD_TTL_MINUTES) -> int:
+    """Deletes raw uploads older than ttl_minutes that were never analyzed.
+
+    Why this exists: the privacy promise is "the original file is not
+    retained". Deleting it inside analyze_document() covers the normal path,
+    but an upload that never reaches analyze (closed tab, failed request)
+    would otherwise keep the raw file forever. Matching DB rows still in
+    'uploaded' state become 'expired' so a later analyze gives a clear
+    message instead of a crash. Returns how many files were removed."""
+    if not UPLOAD_DIR.exists():
+        return 0
+    cutoff = time.time() - ttl_minutes * 60
+    purged = 0
+    for f in UPLOAD_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+                purged += 1
+                db.query(DocumentAnalysis).filter(
+                    DocumentAnalysis.document_id == f.stem, DocumentAnalysis.status == "uploaded"
+                ).update({"status": "expired"})
+        except OSError as e:
+            logger.error("Could not purge stale upload %s: %s", f.name, type(e).__name__)
+    if purged:
+        db.commit()
+        logger.info("Purged %d stale raw upload(s) older than %d minutes", purged, ttl_minutes)
+    return purged
+
+
 def classify_document_type(full_text: str) -> str:
     text_lower = full_text.lower()
     scores = {doc_type: sum(1 for kw in kws if kw in text_lower)
@@ -63,8 +100,9 @@ def save_uploaded_file(contents: bytes, document_id: str, original_filename: str
     return dest_path
 
 
-def create_document_record(db: Session, document_id: str, filename: str, file_path: str) -> DocumentAnalysis:
+def create_document_record(db: Session, document_id: str, filename: str, file_path: str, user_id: int) -> DocumentAnalysis:
     record = DocumentAnalysis(
+        user_id=user_id,
         document_id=document_id,
         filename=filename,
         file_path=file_path,
@@ -132,7 +170,9 @@ Respond with ONLY a JSON object, no other text:
         raw = call_llm(system_prompt, "Produce the JSON now.", max_tokens=600, reasoning_effort="low")
         parsed = _extract_json(raw)
     except Exception as e:
-        logger.warning("Clause explanation LLM call failed: %s", e)
+        # Exception TYPE only — a JSON-parse failure's message embeds raw LLM
+        # output, which can echo the clause text (document content) verbatim.
+        logger.warning("Clause explanation LLM call failed (%s)", type(e).__name__)
         parsed = {
             "plain_explanation": None,
             "why_risky": None,
@@ -148,13 +188,49 @@ Respond with ONLY a JSON object, no other text:
     return parsed
 
 
-def analyze_document(db: Session, document_id: str) -> dict:
+def analyze_document(db: Session, document_id: str, user_id: int) -> dict:
     record = db.query(DocumentAnalysis).filter(DocumentAnalysis.document_id == document_id).first()
-    if record is None:
-        raise ValueError(f"No document found with document_id={document_id}")
+
+    # Same reasoning as issues.py's get_issue(): "doesn't exist" and "exists
+    # but belongs to someone else" raise the SAME error here, on purpose —
+    # routers/documents.py maps this to a single 404 either way, so a caller
+    # can never use the response to tell which document_ids exist for other
+    # users. NEVER trust document_id alone without this check — the whole
+    # point of ownership enforcement is that a guessed/observed id from
+    # another user must be indistinguishable from a nonexistent one.
+    if record is None or record.user_id != user_id:
+        raise ValueError(f"No document found with document_id={document_id} for this user")
+
+    # Idempotent re-analysis: the raw file was deleted after the first run, so
+    # return the saved result instead of failing on a file that (by design) is gone.
+    if record.status == "analyzed" and record.full_result:
+        return record.full_result
+    if record.status == "expired" or not os.path.exists(record.file_path):
+        raise DocumentUnavailableError(document_id)
 
     file_extension = Path(record.file_path).suffix
-    extraction = extract_text(record.file_path, file_extension)
+    stored_file_path = record.file_path  # captured before any mutation, for the finally block below
+
+    try:
+        extraction = extract_text(stored_file_path, file_extension)
+    finally:
+        # PRIVACY: delete the raw uploaded file unconditionally — on success
+        # OR failure of extraction. This is deliberate: even if extraction
+        # fails (corrupted PDF, unreadable image), there is no legitimate
+        # reason left to retain the raw bytes, and NOT deleting on the
+        # failure path would mean exactly the documents most likely to need
+        # a human to look at them (the broken ones) linger on disk longest.
+        # Default behavior is always-delete; an explicit "keep my original"
+        # opt-in is PLANNED / NOT IMPLEMENTED (see DocumentAnalysis.file_retained).
+        try:
+            if os.path.exists(stored_file_path):
+                os.remove(stored_file_path)
+                logger.info("Deleted raw uploaded file for document_id=%s", document_id)
+        except OSError as e:
+            # Deletion failing should not crash the analysis — but it SHOULD
+            # be logged loudly, since it means a sensitive file outlived its
+            # intended retention window.
+            logger.error("Could not delete raw file for document_id=%s: %s", document_id, e)
 
     document_type = classify_document_type(extraction.full_text)
     clauses = segment_clauses(extraction.pages)
@@ -199,7 +275,10 @@ def analyze_document(db: Session, document_id: str) -> dict:
     record.status = "analyzed"
     record.risk_score = risk_score
     record.risk_level = risk_level
-    record.extracted_text_preview = extraction.full_text[:1000]
+    # Data minimization: NO extracted text is stored outside full_result. This
+    # column used to hold the first 1000 characters of the document — which very
+    # often contain party names and addresses — and nothing in the app reads it.
+    record.extracted_text_preview = None
     record.full_result = full_result
     db.commit()
 

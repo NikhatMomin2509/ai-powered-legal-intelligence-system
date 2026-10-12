@@ -30,6 +30,7 @@ modules. No relocation, no duplication, no changes to the RAG files
 themselves.
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -62,7 +63,46 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{BACKEND_ROOT / 'legal_ai.db'}")
+# .as_posix() is deliberate, not cosmetic: on Windows, Path.__str__ uses
+# backslashes (C:\Users\...\backend\legal_ai.db), which produces a BROKEN
+# SQLAlchemy sqlite:/// URL if interpolated directly. .as_posix() gives
+# forward slashes (C:/Users/.../backend/legal_ai.db), which combined with
+# the three slashes below yields the correct absolute-path form SQLAlchemy
+# expects: sqlite:///C:/Users/.../backend/legal_ai.db
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", f"sqlite:///{(BACKEND_ROOT / 'legal_ai.db').as_posix()}"
+)
 
 UPLOAD_DIR = BACKEND_ROOT / "uploads"
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+
+# ---------------- Authentication (added for the privacy/auth feature) ----------------
+import secrets as _secrets  # local import, only used for the dev-fallback secret below
+
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    # No hardcoded fallback secret — a guessable default committed to source
+    # would defeat the point of signing tokens at all. Instead, generate a
+    # random secret for THIS PROCESS only and warn loudly. Consequence:
+    # every existing token becomes invalid on restart (everyone has to log
+    # in again) — an acceptable, SAFE failure mode for an academic project,
+    # unlike silently accepting a weak default secret would be.
+    JWT_SECRET_KEY = _secrets.token_hex(32)
+    logging.getLogger("legal_ai.config").warning(
+        "JWT_SECRET_KEY not set in .env — generated a random one for this process only. "
+        "Existing tokens will NOT survive a server restart. Set JWT_SECRET_KEY in your "
+        "project-root .env for stable sessions across restarts."
+    )
+
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = int(os.environ.get("JWT_EXPIRY_HOURS", "24"))
+
+# Anonymous one-time-use session cookie (backend-enforced, not React state).
+ANON_SESSION_COOKIE_NAME = "anon_session_id"
+ANON_SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365  # 1 year — "one ever," not "one per day"
+
+# Raw uploaded files are deleted as soon as analysis runs. An upload that is
+# NEVER analyzed (tab closed, request failed before analyze) would otherwise
+# sit on disk forever, so anything older than this is purged — at server
+# startup and at the start of every upload. See document_service.purge_stale_uploads.
+UPLOAD_TTL_MINUTES = int(os.environ.get("UPLOAD_TTL_MINUTES", "60"))
