@@ -56,12 +56,16 @@ API_DESCRIPTION = (
 )
 API_VERSION = "0.5.0"  # Phase 5
 
-# CORS — allow the future Vite React dev server. Kept as an explicit list
-# (not "*") so it's easy to see and extend later without surprises.
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS — allow Vite React dev server and production deployments.
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS")
+if _cors_env:
+    CORS_ALLOWED_ORIGINS = [orig.strip() for orig in _cors_env.split(",") if orig.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ]
 
 # .as_posix() is deliberate, not cosmetic: on Windows, Path.__str__ uses
 # backslashes (C:\Users\...\backend\legal_ai.db), which produces a BROKEN
