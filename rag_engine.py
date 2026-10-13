@@ -30,7 +30,6 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 
 logger = logging.getLogger("legal_ai.rag_engine")
 
@@ -105,31 +104,36 @@ class OnnxEmbeddings:
         return self._embed([text])[0]
 
     def embed_documents(self, texts: list):
-        return self._embed(texts)
+        return self._embed(texts, batch_size=32)
 
-    def _embed(self, texts: list):
+    def _embed(self, texts: list, batch_size=32):
         if not texts:
             return []
         import numpy as np
 
-        encs = self.tok.encode_batch(texts)
-        input_ids = np.array([e.ids for e in encs], dtype=np.int64)
-        attention_mask = np.array([e.attention_mask for e in encs], dtype=np.int64)
-        token_type_ids = np.array([e.type_ids for e in encs], dtype=np.int64)
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            encs = self.tok.encode_batch(batch)
+            input_ids = np.array([e.ids for e in encs], dtype=np.int64)
+            attention_mask = np.array([e.attention_mask for e in encs], dtype=np.int64)
+            token_type_ids = np.array([e.type_ids for e in encs], dtype=np.int64)
 
-        out = self.sess.run(None, {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_type_ids": token_type_ids,
-        })[0]
+            out = self.sess.run(None, {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            })[0]
 
-        mask = np.expand_dims(attention_mask, -1)
-        sum_emb = np.sum(out * mask, axis=1)
-        sum_mask = np.clip(mask.sum(axis=1), 1e-9, None)
-        mean_pooled = sum_emb / sum_mask
-        norm = np.linalg.norm(mean_pooled, axis=1, keepdims=True)
-        normalized = mean_pooled / np.clip(norm, 1e-12, None)
-        return normalized.tolist()
+            mask = np.expand_dims(attention_mask, -1)
+            sum_emb = np.sum(out * mask, axis=1)
+            sum_mask = np.clip(mask.sum(axis=1), 1e-9, None)
+            mean_pooled = sum_emb / sum_mask
+            norm = np.linalg.norm(mean_pooled, axis=1, keepdims=True)
+            normalized = mean_pooled / np.clip(norm, 1e-12, None)
+            all_embeddings.extend(normalized.tolist())
+
+        return all_embeddings
 
 
 def get_embeddings():
@@ -143,11 +147,17 @@ def get_embeddings():
         logger.warning(
             "Could not initialize OnnxEmbeddings (%s), falling back to HuggingFaceEmbeddings", e
         )
-        return HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+            return HuggingFaceEmbeddings(
+                model_name=EMBEDDING_MODEL,
+                model_kwargs={"device": "cpu"},
+                encode_kwargs={"normalize_embeddings": True},
+            )
+        except ImportError:
+            raise RAGEngineError(
+                f"OnnxEmbeddings failed ({e}) and langchain_huggingface is not installed."
+            )
 
 
 class RAGEngine:
