@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import Shell from "./components/layout/Shell";
 import Dashboard from "./pages/Dashboard";
@@ -6,8 +7,14 @@ import DocumentAnalyzer from "./pages/DocumentAnalyzer";
 import History from "./pages/History";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import { pingHealth } from "./services/api";
 
 export default function App() {
+  useEffect(() => {
+    // Proactively wake up backend (e.g. Render free tier spin-up) on page load
+    pingHealth();
+  }, []);
+
   return (
     <Shell>
       <Routes>

@@ -38,6 +38,18 @@ async def lifespan(app: FastAPI):
         logging.getLogger("legal_ai.main").exception("Startup purge of stale uploads failed")
     finally:
         db.close()
+
+    # Pre-warm the RAG engine in background so first user request doesn't suffer cold initialization latency
+    import threading
+    def _warmup_engine():
+        try:
+            import rag_engine
+            rag_engine.get_engine()
+            logging.getLogger("legal_ai.main").info("RAG engine successfully pre-warmed on startup.")
+        except Exception:
+            logging.getLogger("legal_ai.main").exception("Failed to pre-warm RAG engine")
+    threading.Thread(target=_warmup_engine, daemon=True).start()
+
     yield
 
 

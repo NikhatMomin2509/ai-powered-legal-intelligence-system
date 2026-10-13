@@ -15,3 +15,7 @@ services:
         value: 24
       - key: UPLOAD_TTL_MINUTES
         value: 60
+      - key: HF_HUB_OFFLINE
+        value: "1"
+      - key: TRANSFORMERS_OFFLINE
+        value: "1"

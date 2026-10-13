@@ -57,6 +57,13 @@ export default function ProcessingSteps({ steps, activeIndex }) {
           );
         })}
       </div>
+
+      {activeIndex >= steps.length - 1 && (
+        <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center gap-2 text-[11px] text-ink-400">
+          <Loader2 size={12} className="text-accent-400 animate-spin shrink-0" />
+          <span>Finalizing legal assessment... (If cloud instance is waking up, this may take a moment)</span>
+        </div>
+      )}
     </div>
   );
 }

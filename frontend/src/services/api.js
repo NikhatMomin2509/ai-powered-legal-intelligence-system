@@ -205,4 +205,8 @@ export function exportDocumentReport(documentId) {
   return downloadPdfBlob(`/api/documents/${documentId}/report.pdf`, filename);
 }
 
+export function pingHealth() {
+  return client.get("/api/health").catch(() => null);
+}
+
 export { API_BASE_URL };

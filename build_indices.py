@@ -30,14 +30,17 @@ for this fix (law index change was not requested here).
 
 import argparse
 import json
+import os
 import pickle
 import re
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
-
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+from rag_engine import get_embeddings
 CASE_CHUNK_SIZE = 1500       # chars per chunk for long judgment texts
 CASE_CHUNK_OVERLAP = 200
 
@@ -84,7 +87,7 @@ def build_law_index():
         corpus_for_bm25.append(_tokenize_words(full_text))
 
     print(f"  {len(documents)} law documents to embed...")
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    embeddings = get_embeddings()
     Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory="./chroma_laws")
     print("  Vector DB persisted to './chroma_laws'")
 
@@ -127,7 +130,7 @@ def build_case_index():
             ids.append(f"case_{item['case_id']}_chunk{i}")
 
     print(f"  {len(documents)} case chunks to embed (from {len(data)} cases)...")
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    embeddings = get_embeddings()
     Chroma.from_documents(documents=documents, embedding=embeddings, ids=ids, persist_directory="./chroma_cases")
     print("  Vector DB persisted to './chroma_cases'")
 
