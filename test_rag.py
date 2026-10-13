@@ -53,7 +53,7 @@ def run_test(label, query):
     print("\n--- FINAL STRUCTURED RESPONSE ---")
     try:
         result = analyze_legal_issue(query)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print(json.dumps(result, indent=2, ensure_ascii=True))
     except Exception as e:
         print(f"  ERROR during analyze_legal_issue: {type(e).__name__}: {e}")
 
